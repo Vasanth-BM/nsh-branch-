@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase'; // Adjust path as needed
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import { applyBranchFilter } from '../lib/branchFilter';
 
 // ## Interfaces remain the same
 interface Bank {
@@ -30,18 +32,21 @@ export const useBanks = () => {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { user, branch } = useAuth();
 
-  // Fetch all banks (only active ones)
   const fetchBanks = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('banks')
         .select('*')
-        .eq('is_active', true)
-        .order('name', { ascending: true });
+        .eq('is_active', true);
+
+      query = applyBranchFilter(query, user, branch);
+
+      const { data, error } = await query.order('name', { ascending: true });
 
       if (error) throw error;
 
@@ -54,13 +59,12 @@ export const useBanks = () => {
     }
   };
 
-  // createBank function is unchanged
   const createBank = async (bankData: BankFormData) => {
     try {
       setLoading(true);
       setError(null);
 
-      const dataToInsert = {
+      const dataToInsert: any = {
         name: bankData.name,
         code: bankData.code || null,
         branch: bankData.branch || null,
@@ -72,6 +76,10 @@ export const useBanks = () => {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
+
+      if (branch) {
+        dataToInsert.branch_id = branch.id;
+      }
 
       const { data, error } = await supabase
         .from('banks')
@@ -166,13 +174,16 @@ export const useBanks = () => {
     }
   };
 
-  // searchBanks function is unchanged
   const searchBanks = async (query: string) => {
     try {
-      const { data, error } = await supabase
+      let searchQuery = supabase
         .from('banks')
         .select('*')
-        .eq('is_active', true)
+        .eq('is_active', true);
+
+      searchQuery = applyBranchFilter(searchQuery, user, branch);
+
+      const { data, error } = await searchQuery
         .or(`name.ilike.%${query}%,code.ilike.%${query}%,branch.ilike.%${query}%`)
         .order('name', { ascending: true });
 

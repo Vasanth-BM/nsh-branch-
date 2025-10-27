@@ -6,7 +6,8 @@ import { JewelDetailsSection } from './sections/JewelDetailsSection/JewelDetails
 import { LoanDetailsSection } from './sections/LoanDetailsSection/LoanDetailsSection';
 import { Button } from '../../../components/ui/button';
 import { SaveIcon, Loader2 } from 'lucide-react';
-import toast from 'react-hot-toast'; // --- 1. Import toast ---
+import toast from 'react-hot-toast';
+import { useAuth } from '../../../context/AuthContext';
 
 export interface CustomerData {
   name: string;
@@ -48,9 +49,8 @@ export interface LoanData {
 
 export const CreatePledge = (): JSX.Element => {
   const navigate = useNavigate();
+  const { branch } = useAuth();
   const [saving, setSaving] = useState(false);
-  // The error state is no longer needed, toast will handle it.
-  // const [error, setError] = useState<string | null>(null); 
 
   const [jewelType, setJewelType] = useState("Gold");
   const [metalRate, setMetalRate] = useState(9000);
@@ -175,11 +175,10 @@ export const CreatePledge = (): JSX.Element => {
 
     setSaving(true);
 
-    // This is the async function that toast.promise will track
     const savePledgePromise = async () => {
       const { data: customer, error: customerError } = await supabase
         .from('customers')
-        .insert([customerData])
+        .insert([{ ...customerData, branch_id: branch?.id }])
         .select()
         .single();
 
@@ -187,18 +186,26 @@ export const CreatePledge = (): JSX.Element => {
 
       const { data: loan, error: loanError } = await supabase
         .from('loans')
-        .insert([{ ...loanData, customer_id: customer.id, metal_rate: metalRate }])
+        .insert([{
+          ...loanData,
+          customer_id: customer.id,
+          metal_rate: metalRate,
+          branch_id: branch?.id
+        }])
         .select()
         .single();
 
       if (loanError) throw new Error(`Loan Error: ${loanError.message}`);
 
-      const jewelInserts = jewelData.map(jewel => ({ loan_id: loan.id, ...jewel }));
+      const jewelInserts = jewelData.map(jewel => ({
+        loan_id: loan.id,
+        branch_id: branch?.id,
+        ...jewel
+      }));
       const { error: jewelError } = await supabase.from('jewels').insert(jewelInserts);
 
       if (jewelError) throw new Error(`Jewel Error: ${jewelError.message}`);
 
-      // Return the loan on success so the success handler can use it
       return loan;
     };
 

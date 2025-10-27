@@ -1,7 +1,6 @@
-// hooks/useRepledgeDataDetails.ts
-
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 // The interface remains the same, but we add total_count
 export interface RepledgeWithDetails {
@@ -31,21 +30,21 @@ export const useRepledgeData = (
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
+  const { user, branch } = useAuth();
 
   const fetchRepledgeData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Prepare parameters for the RPC call
-      const params = {
+      const params: any = {
         search_term: searchTerm.trim(),
         page_num: page,
         page_size: itemsPerPage,
-        // Pass null if filters are not set
         bank_id_filter: bankFilter !== 'all' ? bankFilter : null,
         start_date_filter: startDate || null,
-        end_date_filter: endDate || null
+        end_date_filter: endDate || null,
+        branch_id_filter: user?.role === 'admin' ? null : (branch?.id || null)
       };
 
       // Call the database function instead of building a query
@@ -78,8 +77,10 @@ export const useRepledgeData = (
   };
 
   useEffect(() => {
-    fetchRepledgeData();
-  }, [searchTerm, page, itemsPerPage, bankFilter, startDate, endDate]);
+    if (user && branch) {
+      fetchRepledgeData();
+    }
+  }, [searchTerm, page, itemsPerPage, bankFilter, startDate, endDate, user, branch]);
 
   return {
     data,

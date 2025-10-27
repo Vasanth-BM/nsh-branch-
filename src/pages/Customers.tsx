@@ -5,6 +5,8 @@ import { calculateLoanStatus, getStatusColor, getStatusAbbreviation } from '../l
 import * as XLSX from 'xlsx';
 import { FiTrash2,FiSearch, FiFilter, FiDownload, FiChevronLeft, FiChevronRight, FiAlertCircle, FiXCircle } from 'react-icons/fi';
 import { FaUsers } from 'react-icons/fa';
+import { useAuth } from '../context/AuthContext';
+import { applyBranchFilter } from '../lib/branchFilter';
 
 
 // --- Interfaces & Types ---
@@ -57,7 +59,6 @@ const GoldCoinSpinner: React.FC = () => (
   </div>
 );
 
-// --- Main Customers Component ---
 export const Customers: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,10 +73,13 @@ export const Customers: React.FC = () => {
   const [endDate, setEndDate] = useState('');
 
   const navigate = useNavigate();
+  const { user, branch } = useAuth();
 
   useEffect(() => {
-    fetchCustomers();
-  }, []);
+    if (user && branch) {
+      fetchCustomers();
+    }
+  }, [user, branch]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -92,11 +96,13 @@ export const Customers: React.FC = () => {
   const fetchCustomers = async () => {
     setLoading(true);
     try {
-      // UPDATED QUERY to fetch jewels nested inside loans
-      const { data, error } = await supabase
+      let query = supabase
         .from('customers')
-        .select(`*, loans (*, jewels (*))`)
-        .order('created_at', { ascending: false });
+        .select(`*, loans (*, jewels (*))`);
+
+      query = applyBranchFilter(query, user, branch);
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
 

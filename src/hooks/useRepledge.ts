@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase, type Loan, type Jewel, type RepledgeEntry } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import { applyBranchFilter } from '../lib/branchFilter';
 
 export const useRepledge = () => {
   const [loading, setLoading] = useState(false);
@@ -8,19 +10,21 @@ export const useRepledge = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const itemsPerPage = 5;
+  const { user, branch } = useAuth();
 
-  // Fetch loan details by loan number
   const fetchLoanDetails = async (loanNo: string) => {
     setLoading(true);
     setError(null);
 
     try {
-      // Fetch loan details
-      const { data: loanData, error: loanError } = await supabase
+      let query = supabase
         .from('loans')
         .select('*')
-        .eq('loan_no', loanNo)
-        .limit(1);
+        .eq('loan_no', loanNo);
+
+      query = applyBranchFilter(query, user, branch);
+
+      const { data: loanData, error: loanError } = await query.limit(1);
 
       if (loanError) {
         throw new Error('Loan not found');
@@ -64,7 +68,6 @@ export const useRepledge = () => {
     }
   };
 
-  // Fetch repledge entries with pagination
   const fetchRepledgeEntries = async (page = currentPage) => {
     setLoading(true);
     setError(null);
@@ -73,9 +76,13 @@ export const useRepledge = () => {
       const from = (page - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
 
-      const { data, error, count } = await supabase
+      let query = supabase
         .from('repledge_entries')
-        .select('*', { count: 'exact' })
+        .select('*', { count: 'exact' });
+
+      query = applyBranchFilter(query, user, branch);
+
+      const { data, error, count } = await query
         .order('created_at', { ascending: false })
         .range(from, to);
 
@@ -91,7 +98,6 @@ export const useRepledge = () => {
     }
   };
 
-  // Save repledge entry
   const saveRepledgeEntry = async (entryData: Omit<RepledgeEntry, 'id' | 'created_at' | 'updated_at'>) => {
     setLoading(true);
     setError(null);
@@ -99,13 +105,12 @@ export const useRepledge = () => {
     try {
       const { data, error } = await supabase
         .from('repledge_entries')
-        .insert([entryData])
+        .insert([{ ...entryData, branch_id: branch?.id }])
         .select()
         .single();
 
       if (error) throw error;
 
-      // Refresh the entries list
       await fetchRepledgeEntries(currentPage);
 
       return data as RepledgeEntry;

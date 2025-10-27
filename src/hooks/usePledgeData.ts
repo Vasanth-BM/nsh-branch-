@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import { supabase, type PledgeData, type Customer, type Loan, type Jewel, type Calculation } from '../lib/supabase'
 import { calculateLoanStatus } from '../lib/loanUtils'
+import { useAuth } from '../context/AuthContext'
+import { applyBranchFilter } from '../lib/branchFilter'
 
 export const usePledgeData = (loanId?: string) => {
   const [data, setData] = useState<PledgeData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { user, branch } = useAuth()
 
   useEffect(() => {
     const fetchPledgeData = async () => {
@@ -13,17 +16,20 @@ export const usePledgeData = (loanId?: string) => {
         setLoading(true)
         setError(null)
 
-        // If no loanId provided, get the first loan for demo
         let targetLoanId = loanId
-        
+
         if (!targetLoanId) {
-          const { data: loans, error: loansError } = await supabase
+          let query = supabase
             .from('loans')
             .select('id')
+
+          query = applyBranchFilter(query, user, branch)
+
+          const { data: loans, error: loansError } = await query
             .order('created_at', { ascending: false })
             .limit(1)
             .single()
-          
+
           if (loansError) throw loansError
           targetLoanId = loans?.id
         }

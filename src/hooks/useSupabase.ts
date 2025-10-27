@@ -1,21 +1,27 @@
 import { useEffect, useState } from 'react';
 import { supabase, type Customer, type Loan, type Jewel } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import { applyBranchFilter } from '../lib/branchFilter';
 
 export const useLoans = () => {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user, branch } = useAuth();
 
   const fetchLoans = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('loans')
         .select(`
           *,
           customer:customers!fk_loans_customer_id(*)
-        `)
-        .order('created_at', { ascending: false });
+        `);
+
+      query = applyBranchFilter(query, user, branch);
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
       setLoans(data || []);
@@ -27,21 +33,22 @@ export const useLoans = () => {
   };
 
   useEffect(() => {
-    fetchLoans();
+    if (user && branch) {
+      fetchLoans();
 
-    // Subscribe to real-time changes
-    const subscription = supabase
-      .channel('loans_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'loans' },
-        () => fetchLoans()
-      )
-      .subscribe();
+      const subscription = supabase
+        .channel('loans_changes')
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'loans' },
+          () => fetchLoans()
+        )
+        .subscribe();
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
+  }, [user, branch]);
 
   return { loans, loading, error, refetch: fetchLoans };
 };
@@ -188,9 +195,15 @@ export function useDashboardStats() {
   const fetchStats = async () => {
     try {
       setLoading(true);
-      const { data: loans, error } = await supabase
-        .from('loans')
-        .select('*');
+      let query = supabase.from('loans').select('*');
+
+      const authData = localStorage.getItem('auth');
+      if (authData) {
+        const { user, branch } = JSON.parse(authData);
+        query = applyBranchFilter(query, user, branch);
+      }
+
+      const { data: loans, error } = await query;
 
       if (error) throw error;
       if (!loans) return;
@@ -254,17 +267,22 @@ export function useDashboardStats() {
 export function useRecentLoans() {
   const [loans, setLoans] = useState<Loan[]>([])
   const [loading, setLoading] = useState(true)
+  const { user, branch } = useAuth();
 
   const fetchLoans = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('loans')
         .select(`
           *,
           customer:customers(*)
-        `)
+        `);
+
+      query = applyBranchFilter(query, user, branch);
+
+      const { data, error } = await query
         .order('created_at', { ascending: false })
-        .limit(10)
+        .limit(10);
 
       if (error) throw error
       setLoans(data || [])
@@ -276,23 +294,24 @@ export function useRecentLoans() {
   }
 
   useEffect(() => {
-    fetchLoans()
+    if (user && branch) {
+      fetchLoans()
 
-    // Subscribe to real-time changes
-    const channel = supabase
-      .channel('recent-loans-changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'loans' },
-        () => {
-          fetchLoans()
-        }
-      )
-      .subscribe()
+      const channel = supabase
+        .channel('recent-loans-changes')
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'loans' },
+          () => {
+            fetchLoans()
+          }
+        )
+        .subscribe()
 
-    return () => {
-      supabase.removeChannel(channel)
+      return () => {
+        supabase.removeChannel(channel)
+      }
     }
-  }, [])
+  }, [user, branch])
 
   return { loans, loading, refetch: fetchLoans }
 }
