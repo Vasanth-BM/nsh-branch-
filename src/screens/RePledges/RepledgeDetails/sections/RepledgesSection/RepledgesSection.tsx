@@ -93,7 +93,7 @@ export const RepledgesSection: React.FC<RepledgesSectionProps> = ({
               {data.length === 0 ? (
                 <div className="flex items-center justify-center py-6 sm:py-8">
                   <p className="text-gray-500 text-xs sm:text-sm">
-                    No repledge entries found
+                    No repledge entries 
                   </p>
                 </div>
               ) : (
