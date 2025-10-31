@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useRepledgeData } from "../../../hooks/useRepledgeDataDetails";
+import { useRepledgeDetails } from "../../../hooks/useRepledgeDetails";
 import { useBanks } from "../../../hooks/useBank";
 import * as XLSX from 'xlsx';
-import { FiSearch, FiFilter, FiDownload, FiAlertCircle, FiXCircle } from 'react-icons/fi';
+import { FiSearch, FiFilter, FiDownload, FiAlertCircle, FiXCircle, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import { FaFileInvoiceDollar } from 'react-icons/fa';
 import { Button } from '../../../components/ui/button';
 import { Input } from "../../../components/ui/input";
@@ -110,28 +110,34 @@ const PaginationNav: React.FC<PaginationNavProps> = ({ currentPage, totalPages, 
 };
 
 export const RepledgeDetails = (): JSX.Element => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [bankFilter, setBankFilter] = useState('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const itemsPerPage = 10;
 
   const { banks, loading: banksLoading } = useBanks();
 
-  // NOTE: We pass currentPage (1-based) to the hook. If your hook expects an offset,
-  // change the second argument to `(currentPage - 1) * itemsPerPage`.
-  const { data, loading, error, totalCount } = useRepledgeData(
-    searchTerm, currentPage, itemsPerPage, bankFilter, startDate, endDate
-  );
+  const {
+    repledges: data,
+    loading,
+    filteredRepledges,
+    search: searchTerm,
+    setSearch: setSearchTerm,
+    bankFilter,
+    setBankFilter,
+    statusFilter,
+    setStatusFilter,
+    dateFilter,
+    setDateFilter,
+    startDate,
+    setStartDate,
+    endDate,
+    setEndDate,
+    currentPage,
+    setCurrentPage,
+    totalPages,
+    totalCount,
+  } = useRepledgeDetails();
 
-  // compute totalPages safely (0 when no data)
-  const totalPages = totalCount ? Math.ceil(Number(totalCount) / itemsPerPage) : 0;
-
-  // close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
@@ -142,42 +148,31 @@ export const RepledgeDetails = (): JSX.Element => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showFilters]);
 
-  // reset page when filters/search/date change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, bankFilter, startDate, endDate]);
-
-  // clamp currentPage whenever totalCount/totalPages changes
-  useEffect(() => {
-    if (totalPages > 0 && currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [totalPages, currentPage]);
-
   const handleClearFilters = () => {
     setSearchTerm('');
     setBankFilter('all');
+    setStatusFilter('All');
+    setDateFilter('All');
     setStartDate('');
     setEndDate('');
     setShowFilters(false);
     setCurrentPage(1);
   };
 
-  // Helper Functions
   const formatAmount = (amount: number | null) => amount ? `₹${amount.toLocaleString("en-IN")}` : "—";
   const formatDate = (dateString: string | null) => dateString ? new Date(dateString).toLocaleDateString("en-GB") : "No Date";
 
   const exportToExcel = () => {
-    if (!data || data.length === 0) {
+    if (!filteredRepledges || filteredRepledges.length === 0) {
       alert("No data to export!");
       return;
     }
-    const exportData = data.map(rp => ({
-      'Repledge No': rp.re_no || 'N/A',
-      'Original Loan No': rp.loan_no || 'N/A',
-      'Customer Name': rp.customer_name || 'N/A',
-      'Bank': rp.bank_name || 'N/A',
-      'Repledge Date': formatDate(rp.created_at),
+    const exportData = filteredRepledges.map(rp => ({
+      'Repledge No': rp.repledge_no || 'N/A',
+      'Original Loan No': rp.loan?.loan_no || 'N/A',
+      'Customer Name': rp.customer?.name || 'N/A',
+      'Bank': rp.bank?.name || 'N/A',
+      'Repledge Date': formatDate(rp.date),
       'Amount': rp.amount || 0,
       'Status': rp.status || 'N/A',
     }));
@@ -186,18 +181,6 @@ export const RepledgeDetails = (): JSX.Element => {
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Repledge Data');
     XLSX.writeFile(workbook, `repledge_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-slate-100">
-        <div className="text-center p-10 bg-white rounded-lg shadow-md">
-          <FiAlertCircle className="mx-auto text-5xl text-red-500 mb-4" />
-          <p className="text-lg font-bold text-red-700">Failed to load data.</p>
-          <p className="text-sm text-slate-600 mt-1">{error}</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="p-4 sm:p-6 bg-slate-100 min-h-screen font-sans">
@@ -215,24 +198,34 @@ export const RepledgeDetails = (): JSX.Element => {
         </div>
       </header>
 
-      {/* --- Search + Filters --- */}
       <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
         <div className="flex items-center gap-2 relative">
           <div className="relative flex-1">
             <FiSearch className="absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" />
-            <Input type="text" placeholder="Search customer, loan no..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-slate-100 border-transparent rounded-lg pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 focus:bg-white transition" />
+            <Input type="text" placeholder="Search customer, loan no, repledge no..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-slate-100 border-transparent rounded-lg pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 focus:bg-white transition" />
           </div>
           <div ref={filterRef} className="relative">
             <Button variant="outline" size="icon" onClick={() => setShowFilters(v => !v)} title="Filter" className="bg-slate-100 hover:bg-slate-200">
               <FiFilter className="h-4 w-4 text-slate-600" />
             </Button>
-            <div className={`absolute right-0 top-full mt-2 z-10 w-72 origin-top-right transition-all duration-300 ease-in-out ${showFilters ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-4 scale-95 pointer-events-none'}`}>
+            <div className={`absolute right-0 top-full mt-2 z-10 w-80 origin-top-right transition-all duration-300 ease-in-out ${showFilters ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-4 scale-95 pointer-events-none'}`}>
               <div className="bg-white border border-slate-200 rounded-lg shadow-xl p-4">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-sm font-semibold text-slate-800">Filter & Export</h3>
                   <button onClick={handleClearFilters} className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"><FiXCircle size={14} /> Clear All</button>
                 </div>
                 <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                      <SelectTrigger className="w-full bg-slate-100 border-transparent text-sm focus:ring-2 focus:ring-indigo-500"><SelectValue placeholder="Filter by Status..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="All">All Statuses</SelectItem>
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Closed">Closed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Bank</label>
                     <Select value={bankFilter} onValueChange={setBankFilter} disabled={banksLoading}>
@@ -244,12 +237,26 @@ export const RepledgeDetails = (): JSX.Element => {
                     </Select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Date Range</label>
-                    <div className="gap-2">
-                      <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-slate-100 border-transparent text-sm focus:ring-2 focus:ring-indigo-500" />
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Custom Date Range</label>
+                    <div className="gap-1">
+                      <Input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setDateFilter('All'); }} className="w-full bg-slate-100 border-transparent text-sm focus:ring-2 focus:ring-indigo-500 mb-1" />
                       <span className="text-slate-500 text-xs">to</span>
-                      <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-slate-100 border-transparent text-sm focus:ring-2 focus:ring-indigo-500" />
+                      <Input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setDateFilter('All'); }} className="w-full bg-slate-100 border-transparent text-sm focus:ring-2 focus:ring-indigo-500 mt-1" />
                     </div>
+                  </div>
+                  <div className="border-t border-slate-200"></div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Predefined Range</label>
+                    <Select value={dateFilter} onValueChange={(val) => { setDateFilter(val); setStartDate(''); setEndDate(''); }}>
+                      <SelectTrigger className="w-full bg-slate-100 border-transparent text-sm focus:ring-2 focus:ring-indigo-500"><SelectValue placeholder="Filter by Date..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="All">All Time</SelectItem>
+                        <SelectItem value="Today">Today</SelectItem>
+                        <SelectItem value="This Week">This Week</SelectItem>
+                        <SelectItem value="This Month">This Month</SelectItem>
+                        <SelectItem value="This Year">This Year</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <Button onClick={exportToExcel} className="mt-2 w-full bg-emerald-600 hover:bg-emerald-700"><FiDownload size={16} className="mr-2" /> Export Data</Button>
                 </div>
@@ -274,7 +281,7 @@ export const RepledgeDetails = (): JSX.Element => {
               <table className="w-full">
                 <thead className="hidden sm:table-header-group bg-slate-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider col-span-2">Customer / Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Customer / Date</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Bank</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Loan / Repledge No</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
@@ -287,17 +294,17 @@ export const RepledgeDetails = (): JSX.Element => {
                       {/* --- DESKTOP VIEW --- */}
                       <td className="hidden sm:table-cell px-4 py-3 align-top">
                         <div className="flex items-start gap-3">
-                          <Avatar className="h-10 w-10 flex-shrink-0"><AvatarImage src={item.customer_photo || undefined} className="object-cover" /><AvatarFallback>{item.customer_name?.charAt(0)}</AvatarFallback></Avatar>
+                          <Avatar className="h-10 w-10 flex-shrink-0"><AvatarImage src={item.customer?.photo_url || undefined} className="object-cover" /><AvatarFallback>{item.customer?.name?.charAt(0)}</AvatarFallback></Avatar>
                           <div>
-                            <p className="text-sm font-semibold text-slate-800 break-words">{item.customer_name || 'N/A'}</p>
-                            <p className="text-xs text-slate-500 mt-1">{formatDate(item.created_at)}</p>
+                            <p className="text-sm font-semibold text-slate-800 break-words">{item.customer?.name || 'N/A'}</p>
+                            <p className="text-xs text-slate-500 mt-1">{formatDate(item.date)}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="hidden sm:table-cell px-4 py-3 text-sm text-slate-600 align-top">{item.bank_name || '—'}</td>
+                      <td className="hidden sm:table-cell px-4 py-3 text-sm text-slate-600 align-top">{item.bank?.name || '—'}</td>
                       <td className="hidden sm:table-cell px-4 py-3 font-mono text-xs align-top">
-                        <p>Loan no: <span className="text-slate-700">{item.loan_no || '—'}</span></p>
-                        <p>Repledge no: <span className="text-slate-700 font-semibold">{item.re_no || '—'}</span></p>
+                        <p>Loan no: <span className="text-slate-700">{item.loan?.loan_no || '—'}</span></p>
+                        <p>Repledge no: <span className="text-slate-700 font-semibold">{item.repledge_no || '—'}</span></p>
                       </td>
                       <td className="hidden sm:table-cell px-4 py-3 text-sm text-slate-800 font-semibold align-top text-right">{formatAmount(item.amount)}</td>
                       <td className="hidden sm:table-cell px-4 py-3 text-sm align-top">
@@ -315,20 +322,20 @@ export const RepledgeDetails = (): JSX.Element => {
                       <td className="sm:hidden p-3" colSpan={5}>
                         <div className="flex justify-between items-start">
                           <div className="flex items-center gap-3 min-w-0">
-                            <Avatar className="h-10 w-10 flex-shrink-0"><AvatarImage src={item.customer_photo || undefined} className="object-cover" /><AvatarFallback>{item.customer_name?.charAt(0)}</AvatarFallback></Avatar>
+                            <Avatar className="h-10 w-10 flex-shrink-0"><AvatarImage src={item.customer?.photo_url || undefined} className="object-cover" /><AvatarFallback>{item.customer?.name?.charAt(0)}</AvatarFallback></Avatar>
                             <div>
-                              <p className="text-sm font-semibold text-slate-800 truncate">{item.customer_name || 'N/A'}</p>
-                              <p className="text-xs text-slate-500">{formatDate(item.created_at)}</p>
+                              <p className="text-sm font-semibold text-slate-800 truncate">{item.customer?.name || 'N/A'}</p>
+                              <p className="text-xs text-slate-500">{formatDate(item.date)}</p>
                             </div>
                           </div>
                           <p className="text-base font-bold text-slate-800 flex-shrink-0 pl-2">{formatAmount(item.amount)}</p>
                         </div>
                         <div className="border-t border-slate-100 mt-3 pt-3 grid grid-cols-4 gap-x-4 gap-y-2 text-xs">
-                          <div><p className="text-slate-500">Bank</p><p className="font-medium text-slate-700 truncate">{item.bank_name || '—'}</p></div>
-                          <div><p className="text-slate-500">Re.No</p><p className="font-mono font-semibold text-slate-700">{item.re_no || '—'}</p></div>
-                          <div><p className="text-slate-500">Loan No</p><p className="font-mono text-slate-700">{item.loan_no || '—'}</p></div>
+                          <div><p className="text-slate-500">Bank</p><p className="font-medium text-slate-700 truncate">{item.bank?.name || '—'}</p></div>
+                          <div><p className="text-slate-500">Re.No</p><p className="font-mono font-semibold text-slate-700">{item.repledge_no || '—'}</p></div>
+                          <div><p className="text-slate-500">Loan No</p><p className="font-mono text-slate-700">{item.loan?.loan_no || '—'}</p></div>
                           <div>
-                            <p className="text-slate-500 ">Status</p>
+                            <p className="text-slate-500">Status</p>
                           <span
                              className={`inline-block px-1.5 py-0.2 rounded-full text-xs font-semibold shadow-sm
                               ${item.status?.toLowerCase() === 'active'
@@ -349,15 +356,17 @@ export const RepledgeDetails = (): JSX.Element => {
             </div>
 
             {/* ---------- Pagination ---------- */}
-            <div className="mt-auto bg-transparent py-4">
-              <PaginationNav
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={(p) => setCurrentPage(p)}
-                totalItems={Number(totalCount ?? 0)}
-                itemsPerPage={itemsPerPage}
-              />
-            </div>
+            {totalPages > 1 && (
+              <div className="p-4 flex items-center justify-between">
+                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 rounded-lg shadow-sm text-sm font-semibold text-slate-600 disabled:opacity-50 transition">
+                  <FiChevronLeft size={16} /> Prev
+                </button>
+                <span className="text-sm font-semibold text-slate-500">Page {currentPage} of {totalPages}</span>
+                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 rounded-lg shadow-sm text-sm font-semibold text-slate-600 disabled:opacity-50 transition">
+                  Next <FiChevronRight size={16} />
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
